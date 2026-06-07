@@ -1,0 +1,105 @@
+/* =====================================================
+   Global CSS — Deepfake Detector
+   Dark forensic theme: deep navy + crimson/emerald accents
+===================================================== */
+
+:root {
+  /* Base palette */
+  --bg-base:        #0b0e14;
+  --bg-card:        #111620;
+  --bg-card-hover:  #161c2a;
+  --bg-border:      #1e2738;
+
+  /* Text */
+  --text-primary:   #e8edf5;
+  --text-secondary: #8a96aa;
+  --text-muted:     #4a5568;
+
+  /* Accents */
+  --accent-fake:    #ef4444;   /* red   — FAKE verdict */
+  --accent-real:    #22c55e;   /* green — REAL verdict */
+  --accent-warn:    #f59e0b;   /* amber — borderline */
+  --accent-blue:    #3b82f6;   /* blue  — UI chrome */
+  --accent-blue-dim:#1d4ed8;
+
+  /* Glow colours */
+  --glow-fake:  0 0 24px rgba(239,68,68,0.35);
+  --glow-real:  0 0 24px rgba(34,197,94,0.35);
+  --glow-blue:  0 0 16px rgba(59,130,246,0.3);
+
+  /* Typography */
+  --font-ui:   'DM Sans', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+
+  /* Sizing */
+  --radius-sm:  6px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --max-w:    1280px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.6;
+  /* Subtle noise texture */
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59,130,246,0.08) 0%, transparent 60%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+#root {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: var(--bg-base); }
+::-webkit-scrollbar-thumb  { background: var(--bg-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ---- Animations ---- */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes scanline {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(200%); }
+}
+
+.animate-fade-up  { animation: fadeUp  0.4s ease both; }
+.animate-fade-in  { animation: fadeIn  0.3s ease both; }
+.animate-pulse    { animation: pulse   1.5s ease-in-out infinite; }
+.animate-spin     { animation: spin    0.9s linear infinite; }
+
+/* ---- Utility ---- */
+.font-mono { font-family: var(--font-mono); }
+.text-fake { color: var(--accent-fake); }
+.text-real { color: var(--accent-real); }
+.text-muted { color: var(--text-secondary); }
