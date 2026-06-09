@@ -6,13 +6,14 @@
 
 import axios from 'axios'
 
-const BASE_URL = 'https://unstable-mothproof-chafe.ngrok-free.dev'
+// const BASE_URL = 'https://unstable-mothproof-chafe.ngrok-free.dev'
+const BASE_URL = 'https://itsmesagar-deepfake-detection-api.hf.space'
 
 const client = axios.create({
   baseURL: BASE_URL,
   timeout: 180_000,
   headers: {
-    'ngrok-skip-browser-warning': 'true',
+    // 'ngrok-skip-browser-warning': 'true',
   },
 })
 
@@ -38,7 +39,7 @@ export async function predictVideo(file, onProgress) {
   const { data } = await client.post('/predict/video', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
-      'ngrok-skip-browser-warning': 'true',
+      // 'ngrok-skip-browser-warning': 'true',
     },
     onUploadProgress: (event) => {
       if (onProgress && event.total) {
