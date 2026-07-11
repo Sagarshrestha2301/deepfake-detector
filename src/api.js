@@ -6,8 +6,8 @@
 
 import axios from 'axios'
 
-const BASE_URL = 'https://unstable-mothproof-chafe.ngrok-free.dev'
-// const BASE_URL = 'https://itsmesagar-deepfake-detection-api.hf.space'
+// const BASE_URL = 'https://unstable-mothproof-chafe.ngrok-free.dev'
+const BASE_URL = 'https://itsmesagar-deepfake-detection-api.hf.space'
 
 const client = axios.create({
   baseURL: BASE_URL,
