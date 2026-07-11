@@ -19,10 +19,11 @@ export function HeatmapGrid({ frames }) {
 
   return (
     <div className="heatmap-section animate-fade-up">
-      <h3 className="section-title">Grad-CAM Heatmaps</h3>
+      <p className="section-eyebrow">Explainability</p>
+      <h3 className="section-title">Grad-CAM heatmaps</h3>
       <p className="section-sub">
-        20 evenly-spaced frames, sorted by P(fake) — high to low.
-        Red regions indicate areas most influential for the FAKE prediction.
+        20 evenly-spaced frames, sorted by P(fake) — high to low. Warm regions
+        indicate areas most influential for the FAKE prediction.
       </p>
 
       <div className="heatmap-grid">
@@ -60,7 +61,7 @@ function HeatmapCell({ frame, onClick }) {
           loading="lazy"
         />
         <div className="heatmap-cell__hover">
-          <ZoomIn size={18} />
+          <ZoomIn size={16} strokeWidth={1.5} />
         </div>
       </div>
 
@@ -93,7 +94,7 @@ function Lightbox({ frame, onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         <button className="lightbox__close" onClick={onClose} aria-label="Close">
-          <X size={20} />
+          <X size={16} strokeWidth={1.5} />
         </button>
 
         <img
@@ -119,38 +120,79 @@ function Lightbox({ frame, onClose }) {
 /* ---- Styles --------------------------------------------------- */
 const style = document.createElement('style')
 style.textContent = `
+  :root {
+    --bg-base: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --bg-border: rgba(0,0,0,0.08);
+    --bg-sunken: #FAFAFA;
+    --text-primary: #1D1D1F;
+    --text-secondary: #48484A;
+    --text-muted: #86868B;
+    --accent-fake: #D14343;
+    --accent-real: #1D7A4C;
+    --radius-lg: 18px;
+    --radius-sm: 12px;
+  }
+
   .heatmap-section {
     background: var(--bg-card);
-    border: 1px solid var(--bg-border);
-    border-radius: var(--radius-lg);
-    padding: 24px 28px;
+    border-top: 1px solid var(--bg-border);
+    padding: 40px 0 0;
     margin-bottom: 48px;
+  }
+
+  .section-eyebrow {
+    font-family: "SF Mono", "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0 0 12px;
+    font-weight: 500;
+  }
+
+  .section-title {
+    font-family: "SF Pro Display", "Inter", -apple-system, sans-serif;
+    font-size: clamp(1.6rem, 4vw, 2.2rem);
+    font-weight: 200;
+    letter-spacing: -1px;
+    color: var(--text-primary);
+    margin: 0 0 10px;
+  }
+
+  .section-sub {
+    font-family: "SF Pro Text", "Inter", -apple-system, sans-serif;
+    font-size: 14px;
+    font-weight: 300;
+    color: var(--text-muted);
+    line-height: 1.6;
+    max-width: 560px;
+    margin: 0 0 28px;
   }
 
   .heatmap-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 12px;
-    margin-top: 20px;
+    gap: 16px;
   }
 
   .heatmap-cell {
-    background: var(--bg-base);
+    background: var(--bg-sunken);
     border: 1px solid var(--bg-border);
     border-radius: var(--radius-sm);
     overflow: hidden;
     cursor: pointer;
-    transition: transform 0.18s ease, border-color 0.18s, box-shadow 0.18s;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     padding: 0;
     display: flex;
     flex-direction: column;
   }
   .heatmap-cell:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.06);
   }
-  .heatmap-cell--fake:hover { border-color: rgba(239,68,68,0.5); }
-  .heatmap-cell--real:hover { border-color: rgba(34,197,94,0.5);  }
+  .heatmap-cell--fake:hover { border-color: rgba(209,67,67,0.35); }
+  .heatmap-cell--real:hover { border-color: rgba(29,122,76,0.35); }
 
   .heatmap-cell__img-wrap {
     position: relative;
@@ -162,18 +204,19 @@ style.textContent = `
     height: 100%;
     object-fit: cover;
     display: block;
-    transition: transform 0.25s ease;
+    transition: transform 0.3s ease;
   }
-  .heatmap-cell:hover .heatmap-cell__img { transform: scale(1.04); }
+  .heatmap-cell:hover .heatmap-cell__img { transform: scale(1.03); }
 
   .heatmap-cell__hover {
     position: absolute;
     inset: 0;
-    background: rgba(0,0,0,0.45);
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(2px);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
+    color: var(--text-primary);
     opacity: 0;
     transition: opacity 0.2s;
   }
@@ -183,23 +226,26 @@ style.textContent = `
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 8px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--bg-border);
   }
   .heatmap-cell__frame {
     font-size: 10px;
+    letter-spacing: 0.3px;
     color: var(--text-muted);
   }
   .heatmap-cell__prob {
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 500;
   }
 
   /* Lightbox */
   .lightbox {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.85);
-    backdrop-filter: blur(6px);
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     z-index: 999;
     display: flex;
     align-items: center;
@@ -213,23 +259,25 @@ style.textContent = `
     border: 1px solid var(--bg-border);
     border-radius: var(--radius-lg);
     overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.12);
   }
   .lightbox__close {
     position: absolute;
-    top: 12px; right: 12px;
-    background: rgba(0,0,0,0.5);
-    border: none;
+    top: 14px; right: 14px;
+    background: rgba(255,255,255,0.8);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--bg-border);
     border-radius: 50%;
-    width: 34px; height: 34px;
+    width: 32px; height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
+    color: var(--text-primary);
     cursor: pointer;
     z-index: 1;
     transition: background 0.2s;
   }
-  .lightbox__close:hover { background: rgba(239,68,68,0.6); }
+  .lightbox__close:hover { background: rgba(255,255,255,1); }
   .lightbox__img {
     width: 100%;
     display: block;
@@ -237,10 +285,11 @@ style.textContent = `
   .lightbox__meta {
     display: flex;
     justify-content: space-between;
-    padding: 12px 18px;
+    padding: 14px 20px;
     font-size: 13px;
     color: var(--text-secondary);
-    background: var(--bg-base);
+    background: var(--bg-sunken);
+    border-top: 1px solid var(--bg-border);
   }
 `
 document.head.appendChild(style)

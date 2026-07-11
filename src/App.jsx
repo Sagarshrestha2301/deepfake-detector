@@ -1,21 +1,20 @@
 /**
- * App.jsx — Redesigned to exactly match reference image
- * - Fixed topbar at very top
- * - CSS grid background across entire page
- * - Hero centered below topbar with generous spacing
- * - Stats in DM Mono large font
- * - Sample cards with tinted REAL/FAKE sections + Analyse button
+ * App.jsx — Apple-style minimal redesign
+ * Fixes:
+ *  - Floating pill constrained so it never clips off-screen
+ *  - New "preview" phase: pick file → play/pause video → click Analyse
+ * Flow: idle → preview → uploading → analysing → done / error
  */
 
-import { useState, useEffect, useCallback } from 'react'
-import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { AlertTriangle, RefreshCw, Play, Pause, Scan } from 'lucide-react'
 
 import { healthCheck, predictVideo } from './api'
 import { UploadZone } from './components/UploadZone'
 import { ResultCard } from './components/ResultCard'
 import { FrameChart } from './components/FrameChart'
 import { HeatmapGrid } from './components/HeatmapGrid'
-import { HealthPill, ProgressBanner } from './components/StatusBar'
+import { ProgressBanner } from './components/StatusBar'
 import SampleBar from './components/SampleBar'
 
 const ANALYSIS_MSGS = [
@@ -26,14 +25,108 @@ const ANALYSIS_MSGS = [
   'Almost done…',
 ]
 
+/* ─── Floating health pill ─────────────────────────────────────────────── */
+function FloatingHealthPill({ health, loading }) {
+  const label = loading ? 'Connecting' : health?.status === 'ok' ? 'API online' : 'API offline'
+  const mod   = loading ? 'loading'    : health?.status === 'ok' ? 'online'     : 'offline'
+  return (
+    <div className={`dg-pill dg-pill--${mod}`}>
+      <span className={`dg-pill-dot dg-pill-dot--${mod}`} />
+      {label}
+    </div>
+  )
+}
+
+/* ─── Inline video player shown in preview phase ───────────────────────── */
+function VideoPreview({ file, onAnalyse, onCancel }) {
+  const videoRef  = useRef(null)
+  const [playing, setPlaying]   = useState(false)
+  const [current, setCurrent]   = useState(0)
+  const [duration, setDuration] = useState(0)
+  const objectUrl = useRef(null)
+
+  useEffect(() => {
+    objectUrl.current = URL.createObjectURL(file)
+    return () => URL.revokeObjectURL(objectUrl.current)
+  }, [file])
+
+  const toggle = () => {
+    const v = videoRef.current
+    if (!v) return
+    playing ? v.pause() : v.play()
+    setPlaying(!playing)
+  }
+
+  const fmt = (s) => {
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${String(sec).padStart(2, '0')}`
+  }
+
+  const pct = duration ? (current / duration) * 100 : 0
+
+  return (
+    <div className="dg-preview">
+      {/* video element */}
+      <div className="dg-preview-video-wrap">
+        <video
+          ref={videoRef}
+          src={objectUrl.current}
+          className="dg-preview-video"
+          onTimeUpdate={e => setCurrent(e.target.currentTime)}
+          onLoadedMetadata={e => setDuration(e.target.duration)}
+          onEnded={() => setPlaying(false)}
+          playsInline
+        />
+      </div>
+
+      {/* controls */}
+      <div className="dg-preview-controls">
+        <button className="dg-play-btn" onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}>
+          {playing ? <Pause size={16} /> : <Play size={16} />}
+        </button>
+
+        {/* seek bar */}
+        <div className="dg-seek-track" onClick={e => {
+          const rect = e.currentTarget.getBoundingClientRect()
+          const ratio = (e.clientX - rect.left) / rect.width
+          if (videoRef.current) videoRef.current.currentTime = ratio * duration
+        }}>
+          <div className="dg-seek-fill" style={{ width: `${pct}%` }} />
+          <div className="dg-seek-thumb" style={{ left: `${pct}%` }} />
+        </div>
+
+        <span className="dg-time">{fmt(current)} / {fmt(duration)}</span>
+      </div>
+
+      {/* filename + size */}
+      <div className="dg-preview-meta">
+        <span className="dg-preview-name">{file.name}</span>
+        <span className="dg-preview-size">{(file.size / 1024 / 1024).toFixed(1)} MB</span>
+      </div>
+
+      {/* action row */}
+      <div className="dg-preview-actions">
+        <button className="dg-btn-ghost" onClick={onCancel}>Cancel</button>
+        <button className="dg-btn-analyse" onClick={onAnalyse}>
+          <Scan size={14} />
+          Analyse video
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ─── App ───────────────────────────────────────────────────────────────── */
 export default function App() {
-  const [health, setHealth] = useState(null)
+  const [health, setHealth]               = useState(null)
   const [healthLoading, setHealthLoading] = useState(true)
-  const [phase, setPhase] = useState('idle')
-  const [uploadPct, setUploadPct] = useState(0)
-  const [msgIdx, setMsgIdx] = useState(0)
-  const [result, setResult] = useState(null)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [phase, setPhase]                 = useState('idle')   // idle | preview | uploading | analysing | done | error
+  const [pendingFile, setPendingFile]     = useState(null)     // held in preview
+  const [uploadPct, setUploadPct]         = useState(0)
+  const [msgIdx, setMsgIdx]               = useState(0)
+  const [result, setResult]               = useState(null)
+  const [errorMsg, setErrorMsg]           = useState('')
 
   useEffect(() => {
     healthCheck()
@@ -48,314 +141,259 @@ export default function App() {
     return () => clearInterval(id)
   }, [phase])
 
-  const handleFile = useCallback(async (file) => {
-    setResult(null); setErrorMsg(''); setUploadPct(0); setMsgIdx(0); setPhase('uploading')
+  /* File picked → go to preview instead of immediately uploading */
+  const handleFile = useCallback((file) => {
+    setPendingFile(file)
+    setPhase('preview')
+  }, [])
+
+  /* User confirmed → now actually send to API */
+  const handleAnalyse = useCallback(async () => {
+    const file = pendingFile
+    if (!file) return
+    setResult(null); setErrorMsg(''); setUploadPct(0); setMsgIdx(0)
+    setPhase('uploading')
     try {
       const data = await predictVideo(file, (pct) => {
         setUploadPct(pct)
         if (pct >= 100) setPhase('analysing')
       })
-      setResult(data); setPhase('done')
+      setResult(data)
+      setPhase('done')
     } catch (err) {
-      setErrorMsg(err?.message || 'Server error'); setPhase('error')
+      setErrorMsg(err?.message || 'Server error')
+      setPhase('error')
     }
-  }, [])
+  }, [pendingFile])
 
-  const reset = () => { setPhase('idle'); setResult(null); setUploadPct(0); setErrorMsg('') }
+  const reset = () => {
+    setPhase('idle')
+    setResult(null)
+    setPendingFile(null)
+    setUploadPct(0)
+    setErrorMsg('')
+  }
+
   const loading = phase === 'uploading' || phase === 'analysing'
 
   return (
     <div className="dg-app">
 
-      {/* ═══ TOPBAR — always visible at top ═══ */}
-      <header className="dg-topbar">
-        <div className="dg-brand">
-          <div className="dg-logo">
-            <div className="dg-logo-ring" />
-          </div>
-          <span className="dg-brand-name">DeepGuard</span>
-          <span className="dg-model-pill">EfficientNet-B0</span>
-        </div>
-        <HealthPill health={health} loading={healthLoading} />
-      </header>
+      {/* ── Floating API status pill ── */}
+      <div className="dg-status-anchor">
+        <FloatingHealthPill health={health} loading={healthLoading} />
+      </div>
 
-      {/* ═══ PAGE BODY ═══ */}
-      <div className="dg-body">
-
-        {/* ── HERO ── */}
-        {phase === 'idle' && (
-          <section className="dg-hero">
-            <div className="dg-forensic-tag">
-              <span className="dg-tag-dash" />
-              <span className="dg-tag-text">FORENSIC AI DETECTION</span>
-              <span className="dg-tag-dash" />
-            </div>
-
-            <h1 className="dg-h1">
-              Is this video <em className="dg-real-word">real</em>?
-            </h1>
-
-            <p className="dg-hero-sub">
-              Upload any video. Our model analyses 20 frames with Grad-CAM
-              heatmaps to pinpoint exactly where manipulation occurred.
+      {/* ── HERO (idle + preview only) ── */}
+      {(phase === 'idle' || phase === 'preview') && (
+        <section className="dg-hero" data-compact={phase === 'preview'}>
+          <p className="dg-eyebrow">Deepfake Detection</p>
+          <h1 className="dg-h1">
+            Is this video<br />
+            <em className="dg-h1-em">real?</em>
+          </h1>
+          {phase === 'idle' && (
+            <p className="dg-sub">
+              Upload any video. Our model analyses 20 frames with<br />
+              Grad-CAM heatmaps to reveal manipulation.
             </p>
+          )}
+        </section>
+      )}
 
-            {/* <div className="dg-stats">
+      {/* ── SAMPLE BAR ── */}
+      {phase === 'idle' && (
+        <div className="dg-samples-wrap">
+          <SampleBar onUpload={handleFile} />
+        </div>
+      )}
+
+      {/* ── MAIN ── */}
+      <main className="dg-main">
+
+        {/* Upload zone — idle only */}
+        {phase === 'idle' && (
+          <div className="dg-upload-wrap">
+            <UploadZone onFile={handleFile} />
+            <p className="dg-privacy">Processed locally · never stored permanently</p>
+          </div>
+        )}
+
+        {/* Video preview — preview phase */}
+        {phase === 'preview' && pendingFile && (
+          <VideoPreview
+            file={pendingFile}
+            onAnalyse={handleAnalyse}
+            onCancel={reset}
+          />
+        )}
+
+        {/* Reset button — done phase */}
+        {phase === 'done' && (
+          <button className="dg-reset" onClick={reset}>
+            <RefreshCw size={13} />
+            Analyse another video
+          </button>
+        )}
+
+        {/* Progress banner */}
+        {loading && (
+          <ProgressBanner uploadPct={uploadPct} message={ANALYSIS_MSGS[msgIdx]} />
+        )}
+
+        {/* Error */}
+        {phase === 'error' && (
+          <div className="dg-error">
+            <AlertTriangle size={16} />
+            <div>
+              <div className="dg-err-title">Analysis failed</div>
+              <div className="dg-err-msg">{errorMsg}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Results */}
+        {phase === 'done' && result && (
+          <div className="dg-results">
+            <ResultCard result={result} />
+            <FrameChart frames={result.frames} threshold={result.threshold_used ?? 0.5} />
+            <HeatmapGrid frames={result.frames} />
+          </div>
+        )}
+
+        {/* How it works — idle only */}
+        {phase === 'idle' && (
+          <section className="dg-how">
+            <p className="dg-how-label">How it works</p>
+            <div className="dg-how-grid">
               {[
-                { num: '92.7%', lbl: 'ACCURACY' },
-                { num: '0.983', lbl: 'AUC-ROC'  },
-                { num:  '~6s',  lbl: 'PER VIDEO' },
-              ].map(({ num, lbl }) => (
-                <div className="dg-stat" key={lbl}>
-                  <span className="dg-stat-num">{num}</span>
-                  <span className="dg-stat-lbl">{lbl}</span>
+                { name: 'Extract',  desc: '20 evenly-spaced frames sampled from your video'  },
+                { name: 'Detect',   desc: 'MTCNN isolates the face region with precision'     },
+                { name: 'Analyse',  desc: 'EfficientNet-B0 scores each frame for artifacting' },
+                { name: 'Explain',  desc: 'Grad-CAM highlights the suspicious regions'        },
+              ].map(({ name, desc }, i) => (
+                <div className="dg-how-card" key={name}>
+                  <span className="dg-how-num">{String(i + 1).padStart(2, '0')}</span>
+                  <p className="dg-how-name">{name}</p>
+                  <p className="dg-how-desc">{desc}</p>
                 </div>
               ))}
-            </div> */}
+            </div>
           </section>
         )}
 
-        {/* ── SAMPLE BAR ── */}
-        {phase === 'idle' && (
-          <div className="dg-samples-wrap">
-            <SampleBar onUpload={handleFile} />
-          </div>
-        )}
-
-        {/* ── MAIN ── */}
-        <main className="dg-main">
-
-          {phase === 'idle' && (
-            <div className="dg-upload-wrap">
-              <UploadZone onFile={handleFile} />
-              <p className="dg-privacy">
-                Your video is processed locally and never stored permanently
-              </p>
-            </div>
-          )}
-
-          {phase === 'done' && (
-            <button className="dg-reset" onClick={reset}>
-              <RefreshCw size={14} /> Analyse another video
-            </button>
-          )}
-
-          {loading && (
-            <ProgressBanner uploadPct={uploadPct} message={ANALYSIS_MSGS[msgIdx]} />
-          )}
-
-          {phase === 'error' && (
-            <div className="dg-error">
-              <AlertTriangle size={18} />
-              <div>
-                <div className="dg-err-title">Analysis failed</div>
-                <div className="dg-err-msg">{errorMsg}</div>
-              </div>
-            </div>
-          )}
-
-          {phase === 'done' && result && (
-            <div className="dg-results">
-              <ResultCard result={result} />
-              <FrameChart frames={result.frames} threshold={result.threshold_used ?? 0.5} />
-              <HeatmapGrid frames={result.frames} />
-            </div>
-          )}
-
-          {/* ── HOW IT WORKS ── */}
-          {phase === 'idle' && (
-            <section className="dg-how">
-              <p className="dg-how-lbl">HOW IT WORKS</p>
-              <div className="dg-how-grid">
-                {[
-                  { n: '01', name: 'Extract',  desc: '20 evenly-spaced frames from your video' },
-                  { n: '02', name: 'Detect',   desc: 'MTCNN isolates the face region precisely' },
-                  { n: '03', name: 'Analyse',  desc: 'EfficientNet-B0 scores each frame'        },
-                  { n: '04', name: 'Explain',  desc: 'Grad-CAM highlights suspicious regions'   },
-                ].map(({ n, name, desc }) => (
-                  <div className="dg-how-card" key={n}>
-                    <div className="dg-how-n">{n}</div>
-                    <div className="dg-how-name">{name}</div>
-                    <div className="dg-how-desc">{desc}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-        </main>
-      </div>
+      </main>
 
       {/* ── FOOTER ── */}
       <footer className="dg-footer">
-        Trained on FaceForensics++ C23 · EfficientNet-B0 · Grad-CAM explainability
+        Trained on FaceForensics++ C23 &nbsp;·&nbsp; EfficientNet-B0 &nbsp;·&nbsp; Grad-CAM
       </footer>
 
-      {/* ═══ ALL STYLES ═══ */}
+      {/* ══ STYLES ══ */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,200;0,300;0,400;0,500;1,200;1,300&display=swap');
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        /* ── APP SHELL ── */
+        /* ── SHELL ── */
         .dg-app {
           min-height: 100vh;
-          background-color: #0A0C10;
-          background-image:
-            linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-          background-size: 80px 80px;
-          color: #E5E7EB;
-          font-family: 'DM Sans', sans-serif;
+          background: #ffffff;
+          color: #1d1d1f;
+          font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
           display: flex;
           flex-direction: column;
+          -webkit-font-smoothing: antialiased;
         }
 
-        /* ── TOPBAR ── */
-        .dg-topbar {
-          display: flex;
+        /* ── FLOATING STATUS PILL ──
+           max-width + right clamp keeps it inside viewport on any screen width */
+        .dg-status-anchor {
+          position: fixed;
+          top: 16px;
+          right: clamp(12px, 4vw, 24px);
+          z-index: 200;
+          max-width: calc(100vw - 24px);
+        }
+
+        .dg-pill {
+          display: inline-flex;
           align-items: center;
-          justify-content: space-between;
-          padding: 14px 32px;
-          border-bottom: 1px solid rgba(255,255,255,0.06);
-          background: rgba(10,12,16,0.92);
-          backdrop-filter: blur(8px);
-          position: sticky;
-          top: 0;
-          z-index: 100;
+          gap: 6px;
+          padding: 6px 12px;
+          border-radius: 100px;
+          font-size: 12px;
+          font-weight: 400;
+          letter-spacing: 0.01em;
+          white-space: nowrap;
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 0.5px solid rgba(0,0,0,0.08);
         }
+        .dg-pill--online  { background: rgba(240,253,244,0.94); color: #15803d; }
+        .dg-pill--offline { background: rgba(254,242,242,0.94); color: #dc2626; }
+        .dg-pill--loading { background: rgba(249,250,251,0.94); color: #6b7280; }
 
-        .dg-brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .dg-logo {
-          width: 34px; height: 34px;
-          border-radius: 9px;
-          border: 1.5px solid #22c55e;
-          background: rgba(34,197,94,0.1);
-          display: flex; align-items: center; justify-content: center;
+        .dg-pill-dot {
+          width: 6px; height: 6px;
+          border-radius: 50%;
           flex-shrink: 0;
         }
-        .dg-logo-ring {
-          width: 14px; height: 14px;
-          border-radius: 50%;
-          border: 2px solid #22c55e;
-          opacity: 0.8;
-        }
-
-        .dg-brand-name {
-          font-size: 16px;
-          font-weight: 700;
-          color: #F0EDE6;
-          letter-spacing: 0.3px;
-        }
-
-        .dg-model-pill {
-          font-family: 'DM Mono', monospace;
-          font-size: 11px;
-          font-weight: 500;
-          color: #22c55e;
-          background: rgba(34,197,94,0.08);
-          border: 1px solid rgba(34,197,94,0.25);
-          border-radius: 6px;
-          padding: 3px 10px;
-          letter-spacing: 0.2px;
-        }
-
-        /* ── PAGE BODY ── */
-        .dg-body {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-        }
+        .dg-pill-dot--online  { background: #22c55e; }
+        .dg-pill-dot--offline { background: #ef4444; }
+        .dg-pill-dot--loading { background: #9ca3af; }
 
         /* ── HERO ── */
         .dg-hero {
           text-align: center;
-          padding: 80px 24px 48px;
-          max-width: 760px;
+          padding: 110px 24px 56px;
+          max-width: 720px;
           margin: 0 auto;
           width: 100%;
+          transition: padding 0.2s;
+        }
+        .dg-hero[data-compact="true"] {
+          padding: 80px 24px 32px;
         }
 
-        .dg-forensic-tag {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 14px;
-          margin-bottom: 36px;
-        }
-        .dg-tag-dash {
-          display: block;
-          width: 36px; height: 1px;
-          background: #22c55e;
-          opacity: 0.7;
-        }
-        .dg-tag-text {
-          font-family: 'DM Mono', monospace;
-          font-size: 11px;
-          letter-spacing: 3px;
-          color: #22c55e;
-          font-weight: 500;
+        .dg-eyebrow {
+          font-size: 12px;
+          font-weight: 400;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #aeaeb2;
+          margin-bottom: 24px;
         }
 
         .dg-h1 {
-          font-size: clamp(52px, 9vw, 80px);
-          font-weight: 700;
-          color: #F0EDE6;
-          line-height: 1.05;
-          letter-spacing: -2px;
+          font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+          font-size: clamp(52px, 9vw, 88px);
+          font-weight: 200;
+          line-height: 1.04;
+          letter-spacing: -0.03em;
+          color: #1d1d1f;
           margin-bottom: 24px;
-          font-style: normal;
         }
-        .dg-real-word {
-          color: #2EF2C4;
+        .dg-h1-em {
           font-style: italic;
+          font-weight: 200;
+          color: #06b6d4;
         }
 
-        .dg-hero-sub {
+        .dg-sub {
           font-size: 17px;
-          color: #6B7280;
-          line-height: 1.75;
-          max-width: 500px;
-          margin: 0 auto 52px;
+          font-weight: 300;
+          color: #6e6e73;
+          line-height: 1.65;
+          max-width: 420px;
+          margin: 0 auto;
         }
 
-        .dg-stats {
-          display: flex;
-          justify-content: center;
-          gap: 72px;
-        }
-        .dg-stat {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 8px;
-        }
-        .dg-stat-num {
-          font-family: 'DM Mono', monospace;
-          font-size: 36px;
-          font-weight: 500;
-          color: #F0EDE6;
-          letter-spacing: -1px;
-          line-height: 1;
-        }
-        .dg-stat-lbl {
-          font-family: 'DM Mono', monospace;
-          font-size: 10px;
-          letter-spacing: 2px;
-          color: #4B5563;
-          text-transform: uppercase;
-        }
-
-        /* ── SAMPLES WRAP ── */
+        /* ── SAMPLES ── */
         .dg-samples-wrap {
           display: flex;
           justify-content: center;
-          padding: 48px 24px 0;
+          padding: 0 24px 8px;
         }
 
         /* ── MAIN ── */
@@ -363,30 +401,26 @@ export default function App() {
           max-width: 960px;
           width: 100%;
           margin: 0 auto;
-          padding: 40px 24px;
+          padding: 24px 24px 64px;
         }
 
-        /* ── UPLOAD WRAP ── */
+        /* ── UPLOAD ZONE ── */
         .dg-upload-wrap {
-          max-width: 560px;
-          margin: 0 auto 20px;
-          border: 1px solid rgba(255,255,255,0.07);
-          border-radius: 16px;
-          background: rgba(255,255,255,0.015);
+          max-width: 520px;
+          margin: 0 auto 24px;
+          border: 0.5px solid rgba(0,0,0,0.1);
+          border-radius: 18px;
+          background: #fafafa;
           overflow: hidden;
         }
         .dg-privacy {
           text-align: center;
-          font-family: 'DM Mono', monospace;
           font-size: 11px;
-          color: #374151;
-          padding: 11px;
-          border-top: 1px solid rgba(255,255,255,0.04);
-          letter-spacing: 0.2px;
+          color: #aeaeb2;
+          padding: 10px 16px;
+          border-top: 0.5px solid rgba(0,0,0,0.06);
+          letter-spacing: 0.01em;
         }
-
-        /* Override UploadZone internal styles */
-        .dg-upload-wrap .upload-wrapper { margin-bottom: 0 !important; }
         .dg-upload-wrap .upload-zone {
           border: none !important;
           background: transparent !important;
@@ -394,92 +428,255 @@ export default function App() {
           min-height: 200px !important;
           box-shadow: none !important;
         }
-        .dg-upload-wrap .upload-zone:hover { background: rgba(255,255,255,0.02) !important; }
+        .dg-upload-wrap .upload-zone:hover {
+          background: rgba(0,0,0,0.012) !important;
+        }
+
+        /* ── VIDEO PREVIEW ── */
+        .dg-preview {
+          max-width: 560px;
+          margin: 0 auto 24px;
+          border: 0.5px solid rgba(0,0,0,0.1);
+          border-radius: 18px;
+          background: #fafafa;
+          overflow: hidden;
+        }
+
+        .dg-preview-video-wrap {
+          width: 100%;
+          background: #000;
+          border-radius: 18px 18px 0 0;
+          overflow: hidden;
+          aspect-ratio: 16/9;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .dg-preview-video {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          display: block;
+        }
+
+        .dg-preview-controls {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px 16px 10px;
+        }
+
+        .dg-play-btn {
+          flex-shrink: 0;
+          width: 32px; height: 32px;
+          border-radius: 50%;
+          border: 0.5px solid rgba(0,0,0,0.12);
+          background: #fff;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer;
+          color: #1d1d1f;
+          transition: background 0.15s;
+        }
+        .dg-play-btn:hover { background: rgba(0,0,0,0.04); }
+
+        /* seek bar */
+        .dg-seek-track {
+          flex: 1;
+          height: 3px;
+          background: rgba(0,0,0,0.08);
+          border-radius: 2px;
+          position: relative;
+          cursor: pointer;
+        }
+        .dg-seek-fill {
+          position: absolute;
+          left: 0; top: 0; bottom: 0;
+          background: #06b6d4;
+          border-radius: 2px;
+          transition: width 0.1s linear;
+        }
+        .dg-seek-thumb {
+          position: absolute;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          width: 11px; height: 11px;
+          border-radius: 50%;
+          background: #06b6d4;
+          box-shadow: 0 0 0 2px #fff;
+        }
+
+        .dg-time {
+          flex-shrink: 0;
+          font-size: 11px;
+          font-variant-numeric: tabular-nums;
+          color: #aeaeb2;
+          letter-spacing: 0.01em;
+          min-width: 72px;
+          text-align: right;
+        }
+
+        .dg-preview-meta {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 16px 12px;
+        }
+        .dg-preview-name {
+          font-size: 12px;
+          color: #6e6e73;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          max-width: 70%;
+        }
+        .dg-preview-size {
+          font-size: 12px;
+          color: #aeaeb2;
+          flex-shrink: 0;
+        }
+
+        .dg-preview-actions {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          padding: 12px 16px;
+          border-top: 0.5px solid rgba(0,0,0,0.06);
+        }
+
+        .dg-btn-ghost {
+          padding: 8px 14px;
+          border-radius: 100px;
+          border: 0.5px solid rgba(0,0,0,0.1);
+          background: transparent;
+          font-size: 13px;
+          font-family: inherit;
+          color: #6e6e73;
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .dg-btn-ghost:hover { background: rgba(0,0,0,0.04); color: #1d1d1f; }
+
+        .dg-btn-analyse {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 9px 18px;
+          border-radius: 100px;
+          border: none;
+          background: #1d1d1f;
+          color: #fff;
+          font-size: 13px;
+          font-family: inherit;
+          font-weight: 500;
+          cursor: pointer;
+          transition: background 0.15s, transform 0.1s;
+        }
+        .dg-btn-analyse:hover  { background: #3a3a3c; }
+        .dg-btn-analyse:active { transform: scale(0.98); }
 
         /* ── RESET ── */
         .dg-reset {
           display: flex;
           align-items: center;
-          gap: 8px;
-          margin: 0 auto 24px;
-          padding: 10px 18px;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 8px;
-          color: #9CA3AF;
+          gap: 7px;
+          margin: 0 auto 28px;
+          padding: 9px 16px;
+          background: transparent;
+          border: 0.5px solid rgba(0,0,0,0.12);
+          border-radius: 100px;
+          color: #6e6e73;
           cursor: pointer;
           font-size: 13px;
-          font-family: 'DM Sans', sans-serif;
-          transition: background 0.2s;
+          font-family: inherit;
+          transition: background 0.15s, color 0.15s;
         }
-        .dg-reset:hover { background: rgba(255,255,255,0.08); }
+        .dg-reset:hover { background: rgba(0,0,0,0.04); color: #1d1d1f; }
 
         /* ── ERROR ── */
         .dg-error {
           display: flex; gap: 12px; align-items: flex-start;
           padding: 16px 20px;
-          background: rgba(239,68,68,0.08);
-          border: 1px solid rgba(239,68,68,0.25);
-          border-radius: 10px;
-          color: #EF4444;
+          background: rgba(239,68,68,0.05);
+          border: 0.5px solid rgba(239,68,68,0.2);
+          border-radius: 12px;
+          color: #dc2626;
           margin-bottom: 24px;
         }
-        .dg-err-title { font-weight: 600; font-size: 14px; }
-        .dg-err-msg   { font-size: 12px; color: #9CA3AF; margin-top: 3px; }
+        .dg-err-title { font-weight: 500; font-size: 14px; margin-bottom: 2px; }
+        .dg-err-msg   { font-size: 12px; color: #9ca3af; }
 
         /* ── RESULTS ── */
         .dg-results { margin-top: 8px; }
 
         /* ── HOW IT WORKS ── */
-        .dg-how { margin-top: 80px; text-align: center; }
-        .dg-how-lbl {
-          font-family: 'DM Mono', monospace;
-          font-size: 10px;
-          letter-spacing: 3px;
-          color: #22c55e;
-          margin-bottom: 28px;
+        .dg-how { margin-top: 80px; }
+        .dg-how-label {
+          font-size: 12px;
+          font-weight: 400;
+          letter-spacing: 0.06em;
           text-transform: uppercase;
+          color: #aeaeb2;
+          margin-bottom: 20px;
+          text-align: center;
         }
         .dg-how-grid {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
-          gap: 14px;
-        }
-        @media (max-width: 600px) {
-          .dg-how-grid { grid-template-columns: repeat(2, 1fr); }
-          .dg-stats { gap: 36px; }
-          .dg-stat-num { font-size: 28px; }
+          gap: 1px;
+          background: rgba(0,0,0,0.07);
+          border-radius: 16px;
+          overflow: hidden;
         }
         .dg-how-card {
-          background: rgba(255,255,255,0.025);
-          border: 1px solid rgba(255,255,255,0.07);
-          border-radius: 10px;
-          padding: 18px 14px;
-          text-align: center;
+          background: #ffffff;
+          padding: 26px 20px;
         }
-        .dg-how-n {
-          font-family: 'DM Mono', monospace;
+        .dg-how-card:first-child { border-radius: 16px 0 0 16px; }
+        .dg-how-card:last-child  { border-radius: 0 16px 16px 0; }
+        .dg-how-num {
+          display: block;
           font-size: 11px;
-          color: #22c55e;
-          margin-bottom: 8px;
+          color: #aeaeb2;
+          letter-spacing: 0.04em;
+          margin-bottom: 12px;
+          font-variant-numeric: tabular-nums;
         }
         .dg-how-name {
           font-size: 15px;
-          font-weight: 600;
-          color: #E5E7EB;
+          font-weight: 500;
+          color: #1d1d1f;
           margin-bottom: 6px;
+          letter-spacing: -0.01em;
         }
-        .dg-how-desc { font-size: 12px; color: #4B5563; line-height: 1.5; }
+        .dg-how-desc {
+          font-size: 13px;
+          font-weight: 300;
+          color: #6e6e73;
+          line-height: 1.55;
+        }
 
         /* ── FOOTER ── */
         .dg-footer {
+          margin-top: auto;
           text-align: center;
-          padding: 28px;
-          font-family: 'DM Mono', monospace;
+          padding: 28px 24px;
           font-size: 11px;
-          color: #374151;
-          letter-spacing: 0.3px;
-          border-top: 1px solid rgba(255,255,255,0.04);
+          color: #c7c7cc;
+          letter-spacing: 0.02em;
+          border-top: 0.5px solid rgba(0,0,0,0.06);
+        }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 640px) {
+          .dg-hero { padding: 88px 20px 40px; }
+          .dg-h1 { font-size: 44px; }
+          .dg-how-grid { grid-template-columns: repeat(2, 1fr); }
+          .dg-how-card:first-child  { border-radius: 16px 0 0 0; }
+          .dg-how-card:nth-child(2) { border-radius: 0 16px 0 0; }
+          .dg-how-card:nth-child(3) { border-radius: 0 0 0 16px; }
+          .dg-how-card:last-child   { border-radius: 0 0 16px 0; }
         }
       `}</style>
     </div>

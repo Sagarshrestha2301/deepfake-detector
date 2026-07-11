@@ -20,7 +20,8 @@ dist-ssr
 *.suo
 *.ntvs*
 *.njsproj
-*.sln
+*.sln   
 *.sw?
 
 .vercel
+src/App copy.jsx

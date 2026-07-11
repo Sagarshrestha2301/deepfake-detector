@@ -45,7 +45,7 @@ export default function SampleBar({ onUpload }) {
           fontFamily: '"DM Mono", monospace',
           fontSize: 11,
           letterSpacing: '2.5px',
-          color: '#4B5563',
+          color: '#000000',
           textAlign: 'center',
           marginBottom: 20,
           textTransform: 'uppercase',
@@ -118,7 +118,7 @@ export default function SampleBar({ onUpload }) {
                   fontFamily: '"DM Sans", sans-serif',
                   fontSize: 15,
                   fontWeight: 600,
-                  color: '#E5E7EB',
+                  color: '#000000',
                   margin: '2px 0 0',
                 }}>
                   {s.label}
@@ -128,7 +128,7 @@ export default function SampleBar({ onUpload }) {
                 <p style={{
                   fontFamily: '"DM Sans", sans-serif',
                   fontSize: 12,
-                  color: '#6B7280',
+                  color: '#000000',
                   lineHeight: 1.4,
                 }}>
                   {s.desc}
