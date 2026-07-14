@@ -6,6 +6,7 @@
 
 import axios from 'axios'
 
+// const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 // const BASE_URL = 'https://unstable-mothproof-chafe.ngrok-free.dev'
 const BASE_URL = 'https://itsmesagar-deepfake-detection-api.hf.space'
 
@@ -13,7 +14,7 @@ const client = axios.create({
   baseURL: BASE_URL,
   timeout: 180_000,
   headers: {
-    // 'ngrok-skip-browser-warning': 'true',
+    // Keep this empty unless you need a proxy-specific header.
   },
 })
 
@@ -28,13 +29,18 @@ export async function healthCheck() {
 
 /**
  * Upload a video file and run deepfake detection.
- * @param {File} file         — MP4 / AVI / MOV / WEBM
+ * @param {File} file           — MP4 / AVI / MOV / WEBM
+ * @param {number} [numFrames]  — desired frame count (20-60); omit to let the
+ *                                 backend pick via duration-based sampling
  * @param {Function} onProgress — (pct: 0-100) upload progress callback
  * @returns {Promise<PredictResponse>}
  */
-export async function predictVideo(file, onProgress) {
+export async function predictVideo(file, numFrames, onProgress) {
   const formData = new FormData()
   formData.append('file', file)
+  if (numFrames != null) {
+    formData.append('num_frames', String(numFrames))
+  }
 
   const { data } = await client.post('/predict/video', formData, {
     headers: {
@@ -57,7 +63,7 @@ export async function predictVideo(file, onProgress) {
  * @property {'FAKE'|'REAL'} verdict
  * @property {number}  confidence        — mean fake_prob across all frames
  * @property {number}  fake_frame_ratio  — 0-1
- * @property {number}  total_frames      — always 20
+ * @property {number}  total_frames      — 20-60, depends on requested num_frames / video length
  * @property {number}  fake_frames
  * @property {number}  processing_time_s
  * @property {number}  threshold_used    — default 0.5

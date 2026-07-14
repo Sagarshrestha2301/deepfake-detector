@@ -70,7 +70,7 @@ export function ProgressBanner({ uploadPct, message }) {
 
         {!isUploading && (
           <p className="progress-banner__sub">
-            Extracting 20 frames · Grad-CAM heatmaps · ~5–10s on GPU
+            Extracting frames · Grad-CAM heatmaps · ~5–10s on GPU
           </p>
         )}
       </div>

@@ -50,8 +50,8 @@ export function FrameChart({ frames, threshold = 0.5 }) {
     <div className="frame-chart animate-fade-up">
       <h3 className="section-title">Per-Frame Fake Probability</h3>
       <p className="section-sub">
-        Each bar = one of 20 evenly-spaced frames. Red bars exceed the
-        decision threshold ({(threshold * 100).toFixed(0)}%).
+        Each bar = one of {frames.length} evenly-spaced frames. Red bars exceed
+        the decision threshold ({(threshold * 100).toFixed(0)}%).
       </p>
 
       <div className="frame-chart__inner">

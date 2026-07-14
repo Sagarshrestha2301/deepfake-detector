@@ -11,30 +11,92 @@
 import { useState } from 'react'
 import { X, ZoomIn } from 'lucide-react'
 
+const FILTERS = [
+  { id: 'all',  label: 'All'  },
+  { id: 'fake', label: 'Fake' },
+  { id: 'real', label: 'Real' },
+]
+
+const SORTS = [
+  { id: 'prob_desc',  label: 'P(fake) high → low' },
+  { id: 'prob_asc',   label: 'P(fake) low → high' },
+  { id: 'frame_asc',  label: 'Frame order' },
+]
+
 export function HeatmapGrid({ frames }) {
   const [lightbox, setLightbox] = useState(null)  // FrameResult | null
+  const [filter, setFilter]     = useState('all')
+  const [sortBy, setSortBy]     = useState('prob_desc')
 
-  // Sort descending by fake_prob for display
-  const sorted = [...frames].sort((a, b) => b.fake_prob - a.fake_prob)
+  const filtered = frames.filter((f) => {
+    if (filter === 'fake') return f.prediction === 'FAKE'
+    if (filter === 'real') return f.prediction === 'REAL'
+    return true
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === 'prob_asc')  return a.fake_prob - b.fake_prob
+    if (sortBy === 'frame_asc') return a.frame_index - b.frame_index
+    return b.fake_prob - a.fake_prob // prob_desc, default
+  })
+
+  const fakeCount = frames.filter(f => f.prediction === 'FAKE').length
+  const realCount = frames.length - fakeCount
 
   return (
     <div className="heatmap-section animate-fade-up">
       <p className="section-eyebrow">Explainability</p>
       <h3 className="section-title">Grad-CAM heatmaps</h3>
       <p className="section-sub">
-        20 evenly-spaced frames, sorted by P(fake) — high to low. Warm regions
-        indicate areas most influential for the FAKE prediction.
+        {frames.length} evenly-spaced frames. Warm regions indicate areas
+        most influential for the FAKE prediction.
       </p>
 
-      <div className="heatmap-grid">
-        {sorted.map((frame) => (
-          <HeatmapCell
-            key={frame.frame_index}
-            frame={frame}
-            onClick={() => setLightbox(frame)}
-          />
-        ))}
+      {/* Filters + sort */}
+      <div className="heatmap-controls">
+        <div className="heatmap-filters" role="tablist" aria-label="Filter frames">
+          {FILTERS.map((f) => {
+            const count = f.id === 'fake' ? fakeCount : f.id === 'real' ? realCount : frames.length
+            return (
+              <button
+                key={f.id}
+                role="tab"
+                aria-selected={filter === f.id}
+                className={`heatmap-filter-btn heatmap-filter-btn--${f.id}${filter === f.id ? ' is-active' : ''}`}
+                onClick={() => setFilter(f.id)}
+              >
+                {f.label}
+                <span className="heatmap-filter-btn__count">{count}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <select
+          className="heatmap-sort-select"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          aria-label="Sort frames"
+        >
+          {SORTS.map((s) => (
+            <option key={s.id} value={s.id}>{s.label}</option>
+          ))}
+        </select>
       </div>
+
+      {sorted.length === 0 ? (
+        <p className="heatmap-empty">No frames match this filter.</p>
+      ) : (
+        <div className="heatmap-grid">
+          {sorted.map((frame) => (
+            <HeatmapCell
+              key={frame.frame_index}
+              frame={frame}
+              onClick={() => setLightbox(frame)}
+            />
+          ))}
+        </div>
+      )}
 
       {lightbox && (
         <Lightbox frame={lightbox} onClose={() => setLightbox(null)} />
@@ -168,6 +230,77 @@ style.textContent = `
     line-height: 1.6;
     max-width: 560px;
     margin: 0 0 28px;
+  }
+
+  .heatmap-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .heatmap-filters {
+    display: flex;
+    gap: 6px;
+  }
+
+  .heatmap-filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--bg-border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-family: "SF Mono", "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .heatmap-filter-btn:hover { background: var(--bg-sunken); }
+
+  .heatmap-filter-btn__count {
+    font-size: 10.5px;
+    color: var(--text-muted);
+  }
+  .heatmap-filter-btn.is-active .heatmap-filter-btn__count { color: inherit; opacity: 0.75; }
+
+  .heatmap-filter-btn--all.is-active {
+    background: var(--text-primary);
+    border-color: var(--text-primary);
+    color: #fff;
+  }
+  .heatmap-filter-btn--fake.is-active {
+    background: rgba(209,67,67,0.1);
+    border-color: rgba(209,67,67,0.35);
+    color: var(--accent-fake);
+  }
+  .heatmap-filter-btn--real.is-active {
+    background: rgba(29,122,76,0.1);
+    border-color: rgba(29,122,76,0.35);
+    color: var(--accent-real);
+  }
+
+  .heatmap-sort-select {
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--bg-border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-family: "SF Mono", "IBM Plex Mono", monospace;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .heatmap-empty {
+    font-size: 13px;
+    color: var(--text-muted);
+    padding: 32px 0;
+    text-align: center;
   }
 
   .heatmap-grid {

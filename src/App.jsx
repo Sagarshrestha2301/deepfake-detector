@@ -7,23 +7,26 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { AlertTriangle, RefreshCw, Play, Pause, Scan } from 'lucide-react'
+import { AlertTriangle, RefreshCw, Play, Pause, Scan, ShieldAlert, ShieldCheck } from 'lucide-react'
 
 import { healthCheck, predictVideo } from './api'
 import { UploadZone } from './components/UploadZone'
-import { ResultCard } from './components/ResultCard'
 import { FrameChart } from './components/FrameChart'
 import { HeatmapGrid } from './components/HeatmapGrid'
 import { ProgressBanner } from './components/StatusBar'
 import SampleBar from './components/SampleBar'
 
 const ANALYSIS_MSGS = [
-  'Extracting 20 frames…',
+  'Extracting frames…',
   'Running EfficientNet-B0 inference…',
   'Generating Grad-CAM heatmaps…',
   'Computing final verdict…',
   'Almost done…',
 ]
+
+const MIN_FRAMES = 20
+const MAX_FRAMES = 60
+const DEFAULT_FRAMES = 30
 
 /* ─── Floating health pill ─────────────────────────────────────────────── */
 function FloatingHealthPill({ health, loading }) {
@@ -38,7 +41,7 @@ function FloatingHealthPill({ health, loading }) {
 }
 
 /* ─── Inline video player shown in preview phase ───────────────────────── */
-function VideoPreview({ file, onAnalyse, onCancel }) {
+function VideoPreview({ file, frameCount, onFrameCountChange, onAnalyse, onCancel }) {
   const videoRef  = useRef(null)
   const [playing, setPlaying]   = useState(false)
   const [current, setCurrent]   = useState(0)
@@ -105,6 +108,28 @@ function VideoPreview({ file, onAnalyse, onCancel }) {
         <span className="dg-preview-size">{(file.size / 1024 / 1024).toFixed(1)} MB</span>
       </div>
 
+      {/* frame-count slider */}
+      <div className="dg-frame-slider">
+        <div className="dg-frame-slider__row">
+          <span className="dg-frame-slider__label">Frames to analyse</span>
+          <span className="dg-frame-slider__value">{frameCount}</span>
+        </div>
+        <input
+          type="range"
+          min={MIN_FRAMES}
+          max={MAX_FRAMES}
+          step={1}
+          value={frameCount}
+          onChange={e => onFrameCountChange(Number(e.target.value))}
+          className="dg-frame-slider__input"
+          aria-label="Number of frames to analyse"
+        />
+        <div className="dg-frame-slider__ticks">
+          <span>{MIN_FRAMES} · faster</span>
+          <span>{MAX_FRAMES} · more thorough</span>
+        </div>
+      </div>
+
       {/* action row */}
       <div className="dg-preview-actions">
         <button className="dg-btn-ghost" onClick={onCancel}>Cancel</button>
@@ -117,12 +142,25 @@ function VideoPreview({ file, onAnalyse, onCancel }) {
   )
 }
 
+/* ─── Minimal verdict badge (REAL/FAKE only, no stats) ─────────────────── */
+function VerdictBadge({ verdict }) {
+  const isFake = verdict === 'FAKE'
+  const Icon   = isFake ? ShieldAlert : ShieldCheck
+  return (
+    <div className={`dg-verdict-badge dg-verdict-badge--${isFake ? 'fake' : 'real'}`}>
+      <Icon size={22} strokeWidth={1.75} />
+      <span>{verdict}</span>
+    </div>
+  )
+}
+
 /* ─── App ───────────────────────────────────────────────────────────────── */
 export default function App() {
   const [health, setHealth]               = useState(null)
   const [healthLoading, setHealthLoading] = useState(true)
   const [phase, setPhase]                 = useState('idle')   // idle | preview | uploading | analysing | done | error
   const [pendingFile, setPendingFile]     = useState(null)     // held in preview
+  const [frameCount, setFrameCount]       = useState(DEFAULT_FRAMES)
   const [uploadPct, setUploadPct]         = useState(0)
   const [msgIdx, setMsgIdx]               = useState(0)
   const [result, setResult]               = useState(null)
@@ -154,7 +192,7 @@ export default function App() {
     setResult(null); setErrorMsg(''); setUploadPct(0); setMsgIdx(0)
     setPhase('uploading')
     try {
-      const data = await predictVideo(file, (pct) => {
+      const data = await predictVideo(file, frameCount, (pct) => {
         setUploadPct(pct)
         if (pct >= 100) setPhase('analysing')
       })
@@ -164,12 +202,13 @@ export default function App() {
       setErrorMsg(err?.message || 'Server error')
       setPhase('error')
     }
-  }, [pendingFile])
+  }, [pendingFile, frameCount])
 
   const reset = () => {
     setPhase('idle')
     setResult(null)
     setPendingFile(null)
+    setFrameCount(DEFAULT_FRAMES)
     setUploadPct(0)
     setErrorMsg('')
   }
@@ -194,7 +233,7 @@ export default function App() {
           </h1>
           {phase === 'idle' && (
             <p className="dg-sub">
-              Upload any video. Our model analyses 20 frames with<br />
+              Upload any video. Our model analyses up to {MAX_FRAMES} frames with<br />
               Grad-CAM heatmaps to reveal manipulation.
             </p>
           )}
@@ -223,6 +262,8 @@ export default function App() {
         {phase === 'preview' && pendingFile && (
           <VideoPreview
             file={pendingFile}
+            frameCount={frameCount}
+            onFrameCountChange={setFrameCount}
             onAnalyse={handleAnalyse}
             onCancel={reset}
           />
@@ -255,7 +296,7 @@ export default function App() {
         {/* Results */}
         {phase === 'done' && result && (
           <div className="dg-results">
-            <ResultCard result={result} />
+            <VerdictBadge verdict={result.verdict} />
             <FrameChart frames={result.frames} threshold={result.threshold_used ?? 0.5} />
             <HeatmapGrid frames={result.frames} />
           </div>
@@ -267,7 +308,7 @@ export default function App() {
             <p className="dg-how-label">How it works</p>
             <div className="dg-how-grid">
               {[
-                { name: 'Extract',  desc: '20 evenly-spaced frames sampled from your video'  },
+                { name: 'Extract',  desc: 'Evenly-spaced frames sampled from your video'  },
                 { name: 'Detect',   desc: 'MTCNN isolates the face region with precision'     },
                 { name: 'Analyse',  desc: 'EfficientNet-B0 scores each frame for artifacting' },
                 { name: 'Explain',  desc: 'Grad-CAM highlights the suspicious regions'        },
@@ -575,6 +616,104 @@ export default function App() {
         }
         .dg-btn-analyse:hover  { background: #3a3a3c; }
         .dg-btn-analyse:active { transform: scale(0.98); }
+
+        /* ── FRAME-COUNT SLIDER ── */
+        .dg-frame-slider {
+          padding: 0 16px 14px;
+        }
+        .dg-frame-slider__row {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          margin-bottom: 8px;
+        }
+        .dg-frame-slider__label {
+          font-size: 12px;
+          color: #6e6e73;
+          letter-spacing: 0.01em;
+        }
+        .dg-frame-slider__value {
+          font-size: 13px;
+          font-weight: 600;
+          color: #1d1d1f;
+          font-variant-numeric: tabular-nums;
+        }
+        .dg-frame-slider__input {
+          -webkit-appearance: none;
+          -moz-appearance: none;
+          appearance: none;
+          display: block;
+          width: 100%;
+          height: 24px;         /* real hit area — generous for mouse + touch */
+          background: transparent;
+          outline: none;
+          cursor: pointer;
+          margin: 0;
+        }
+        /* visual track — thin, centered inside the tall hit area above */
+        .dg-frame-slider__input::-webkit-slider-runnable-track {
+          height: 3px;
+          border-radius: 2px;
+          background: rgba(0,0,0,0.08);
+        }
+        .dg-frame-slider__input::-moz-range-track {
+          height: 3px;
+          border-radius: 2px;
+          background: rgba(0,0,0,0.08);
+        }
+        .dg-frame-slider__input::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 16px; height: 16px;
+          border-radius: 50%;
+          background: #06b6d4;
+          box-shadow: 0 0 0 3px #fff, 0 1px 3px rgba(0,0,0,0.25);
+          cursor: pointer;
+          margin-top: -6.5px;   /* vertically centers the thumb on the 3px track */
+        }
+        .dg-frame-slider__input::-moz-range-thumb {
+          width: 16px; height: 16px;
+          border: none;
+          border-radius: 50%;
+          background: #06b6d4;
+          box-shadow: 0 0 0 3px #fff, 0 1px 3px rgba(0,0,0,0.25);
+          cursor: pointer;
+        }
+        .dg-frame-slider__ticks {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 6px;
+        }
+        .dg-frame-slider__ticks span {
+          font-size: 10.5px;
+          color: #aeaeb2;
+          letter-spacing: 0.01em;
+        }
+
+        /* ── MINIMAL VERDICT BADGE ── */
+        .dg-verdict-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 22px;
+          border-radius: 100px;
+          font-family: var(--font-mono, 'SF Mono', monospace);
+          font-size: 20px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          border: 1px solid;
+          margin-bottom: 28px;
+        }
+        .dg-verdict-badge--real {
+          color: #1D7A4C;
+          border-color: rgba(34,197,94,0.3);
+          background: rgba(34,197,94,0.07);
+        }
+        .dg-verdict-badge--fake {
+          color: #D14343;
+          border-color: rgba(239,68,68,0.3);
+          background: rgba(239,68,68,0.07);
+        }
 
         /* ── RESET ── */
         .dg-reset {
