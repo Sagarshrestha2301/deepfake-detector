@@ -143,7 +143,6 @@ export default function SampleBar({ onUpload }) {
                   background: btnBg(s),
                   borderTop: `1px solid ${btnTop(s)}`,
                   border: 'none',
-                  borderTop: `1px solid ${btnTop(s)}`,
                   padding: '10px',
                   cursor: loading === s.file ? 'wait' : 'pointer',
                   color: accent(s),
@@ -231,7 +230,7 @@ export default function SampleBar({ onUpload }) {
                 >×</button>
               </div>
             </div>
-            <video src={preview.file} controls autoPlay
+            <video src={preview.file} controls autoPlay muted playsInline
               style={{ width: '100%', display: 'block', maxHeight: '55vh', background: '#000' }} />
             <div style={{ padding: '10px 16px', background: 'rgba(0,0,0,0.3)' }}>
               <p style={{ fontSize: 11, color: '#374151', fontFamily: '"DM Mono", monospace' }}>

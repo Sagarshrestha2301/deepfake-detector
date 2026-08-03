@@ -131,10 +131,16 @@ style.textContent = `
 
   .metric {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
+    align-items: center;        /* ← vertical center alignment */
+    gap: 10px;                 /* consistent spacing */
   }
-  .metric__icon { margin-top: 2px; flex-shrink: 0; }
+  .metric__icon {
+    flex-shrink: 0;            /* prevent icon from shrinking */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;               /* match icon size */
+  }
   .metric__label {
     font-size: 11px;
     text-transform: uppercase;
@@ -145,6 +151,8 @@ style.textContent = `
   .metric__value {
     font-size: 15px;
     font-weight: 600;
+    line-height: 1.4;          /* better readability when wrapped */
+    word-break: break-word;    /* prevent overflow */
   }
 `
 document.head.appendChild(style)

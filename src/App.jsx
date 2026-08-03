@@ -1,20 +1,21 @@
 /**
- * App.jsx — Apple-style minimal redesign
- * Fixes:
- *  - Floating pill constrained so it never clips off-screen
- *  - New "preview" phase: pick file → play/pause video → click Analyse
+ * App.jsx — App shell for the deepfake detector
  * Flow: idle → preview → uploading → analysing → done / error
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { AlertTriangle, RefreshCw, Play, Pause, Scan, ShieldAlert, ShieldCheck } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
-import { healthCheck, predictVideo } from './api'
-import { UploadZone } from './components/UploadZone'
-import { FrameChart } from './components/FrameChart'
-import { HeatmapGrid } from './components/HeatmapGrid'
-import { ProgressBanner } from './components/StatusBar'
-import SampleBar from './components/SampleBar'
+import { healthCheck, predictVideo } from './api';
+import { UploadZone } from './components/UploadZone';
+import { FrameChart } from './components/FrameChart';
+import { HeatmapGrid } from './components/HeatmapGrid';
+import { HealthPill, ProgressBanner } from './components/StatusBar';
+import VerdictBanner from './components/VerdictBanner';
+import VideoPreview from './components/VideoPreview';
+import SampleBar from './components/SampleBar';
+
+// ─── Constants ────────────────────────────────────────────────────────────
 
 const ANALYSIS_MSGS = [
   'Extracting frames…',
@@ -22,235 +23,151 @@ const ANALYSIS_MSGS = [
   'Generating Grad-CAM heatmaps…',
   'Computing final verdict…',
   'Almost done…',
-]
+];
 
-const MIN_FRAMES = 20
-const MAX_FRAMES = 60
-const DEFAULT_FRAMES = 30
+const MAX_FRAMES = 60;
+const DEFAULT_FRAMES = 30;
 
-/* ─── Floating health pill ─────────────────────────────────────────────── */
-function FloatingHealthPill({ health, loading }) {
-  const label = loading ? 'Connecting' : health?.status === 'ok' ? 'API online' : 'API offline'
-  const mod   = loading ? 'loading'    : health?.status === 'ok' ? 'online'     : 'offline'
-  return (
-    <div className={`dg-pill dg-pill--${mod}`}>
-      <span className={`dg-pill-dot dg-pill-dot--${mod}`} />
-      {label}
-    </div>
-  )
-}
+// ─── Error Boundary (for SampleBar) ──────────────────────────────────────
 
-/* ─── Inline video player shown in preview phase ───────────────────────── */
-function VideoPreview({ file, frameCount, onFrameCountChange, onAnalyse, onCancel }) {
-  const videoRef  = useRef(null)
-  const [playing, setPlaying]   = useState(false)
-  const [current, setCurrent]   = useState(0)
-  const [duration, setDuration] = useState(0)
-  const objectUrl = useRef(null)
+class SampleBarErrorBoundary extends React.Component {
+  state = { hasError: false };
 
-  useEffect(() => {
-    objectUrl.current = URL.createObjectURL(file)
-    return () => URL.revokeObjectURL(objectUrl.current)
-  }, [file])
-
-  const toggle = () => {
-    const v = videoRef.current
-    if (!v) return
-    playing ? v.pause() : v.play()
-    setPlaying(!playing)
+  static getDerivedStateFromError() {
+    return { hasError: true };
   }
 
-  const fmt = (s) => {
-    const m = Math.floor(s / 60)
-    const sec = Math.floor(s % 60)
-    return `${m}:${String(sec).padStart(2, '0')}`
+  componentDidCatch(error) {
+    console.error('SampleBar error:', error);
   }
 
-  const pct = duration ? (current / duration) * 100 : 0
-
-  return (
-    <div className="dg-preview">
-      {/* video element */}
-      <div className="dg-preview-video-wrap">
-        <video
-          ref={videoRef}
-          src={objectUrl.current}
-          className="dg-preview-video"
-          onTimeUpdate={e => setCurrent(e.target.currentTime)}
-          onLoadedMetadata={e => setDuration(e.target.duration)}
-          onEnded={() => setPlaying(false)}
-          playsInline
-        />
-      </div>
-
-      {/* controls */}
-      <div className="dg-preview-controls">
-        <button className="dg-play-btn" onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}>
-          {playing ? <Pause size={16} /> : <Play size={16} />}
-        </button>
-
-        {/* seek bar */}
-        <div className="dg-seek-track" onClick={e => {
-          const rect = e.currentTarget.getBoundingClientRect()
-          const ratio = (e.clientX - rect.left) / rect.width
-          if (videoRef.current) videoRef.current.currentTime = ratio * duration
-        }}>
-          <div className="dg-seek-fill" style={{ width: `${pct}%` }} />
-          <div className="dg-seek-thumb" style={{ left: `${pct}%` }} />
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="dg-sample-error">
+          <AlertTriangle size={16} />
+          <span>Sample videos unavailable — please upload your own.</span>
         </div>
-
-        <span className="dg-time">{fmt(current)} / {fmt(duration)}</span>
-      </div>
-
-      {/* filename + size */}
-      <div className="dg-preview-meta">
-        <span className="dg-preview-name">{file.name}</span>
-        <span className="dg-preview-size">{(file.size / 1024 / 1024).toFixed(1)} MB</span>
-      </div>
-
-      {/* frame-count slider */}
-      <div className="dg-frame-slider">
-        <div className="dg-frame-slider__row">
-          <span className="dg-frame-slider__label">Frames to analyse</span>
-          <span className="dg-frame-slider__value">{frameCount}</span>
-        </div>
-        <input
-          type="range"
-          min={MIN_FRAMES}
-          max={MAX_FRAMES}
-          step={1}
-          value={frameCount}
-          onChange={e => onFrameCountChange(Number(e.target.value))}
-          className="dg-frame-slider__input"
-          aria-label="Number of frames to analyse"
-        />
-        <div className="dg-frame-slider__ticks">
-          <span>{MIN_FRAMES} · faster</span>
-          <span>{MAX_FRAMES} · more thorough</span>
-        </div>
-      </div>
-
-      {/* action row */}
-      <div className="dg-preview-actions">
-        <button className="dg-btn-ghost" onClick={onCancel}>Cancel</button>
-        <button className="dg-btn-analyse" onClick={onAnalyse}>
-          <Scan size={14} />
-          Analyse video
-        </button>
-      </div>
-    </div>
-  )
+      );
+    }
+    return this.props.children;
+  }
 }
 
-/* ─── Minimal verdict badge (REAL/FAKE only, no stats) ─────────────────── */
-function VerdictBadge({ verdict }) {
-  const isFake = verdict === 'FAKE'
-  const Icon   = isFake ? ShieldAlert : ShieldCheck
-  return (
-    <div className={`dg-verdict-badge dg-verdict-badge--${isFake ? 'fake' : 'real'}`}>
-      <Icon size={22} strokeWidth={1.75} />
-      <span>{verdict}</span>
-    </div>
-  )
-}
+// ─── Main App ─────────────────────────────────────────────────────────────
 
-/* ─── App ───────────────────────────────────────────────────────────────── */
 export default function App() {
-  const [health, setHealth]               = useState(null)
-  const [healthLoading, setHealthLoading] = useState(true)
-  const [phase, setPhase]                 = useState('idle')   // idle | preview | uploading | analysing | done | error
-  const [pendingFile, setPendingFile]     = useState(null)     // held in preview
-  const [frameCount, setFrameCount]       = useState(DEFAULT_FRAMES)
-  const [uploadPct, setUploadPct]         = useState(0)
-  const [msgIdx, setMsgIdx]               = useState(0)
-  const [result, setResult]               = useState(null)
-  const [errorMsg, setErrorMsg]           = useState('')
+  // API health
+  const [health, setHealth] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(true);
 
+  // UI phases: idle | preview | uploading | analysing | done | error
+  const [phase, setPhase] = useState('idle');
+  const [pendingFile, setPendingFile] = useState(null);
+  const [frameCount, setFrameCount] = useState(DEFAULT_FRAMES);
+
+  // Progress & results
+  const [uploadPct, setUploadPct] = useState(0);
+  const [msgIdx, setMsgIdx] = useState(0);
+  const [result, setResult] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // ── Health check ──
   useEffect(() => {
     healthCheck()
       .then(setHealth)
       .catch(() => setHealth(null))
-      .finally(() => setHealthLoading(false))
-  }, [])
+      .finally(() => setHealthLoading(false));
+  }, []);
 
+  // ── Rotate analysis messages ──
   useEffect(() => {
-    if (phase !== 'analysing') return
-    const id = setInterval(() => setMsgIdx(i => (i + 1) % ANALYSIS_MSGS.length), 2000)
-    return () => clearInterval(id)
-  }, [phase])
+    if (phase !== 'analysing') return;
+    const interval = setInterval(
+      () => setMsgIdx((i) => (i + 1) % ANALYSIS_MSGS.length),
+      2000
+    );
+    return () => clearInterval(interval);
+  }, [phase]);
 
-  /* File picked → go to preview instead of immediately uploading */
+  // ── Handlers ──
   const handleFile = useCallback((file) => {
-    setPendingFile(file)
-    setPhase('preview')
-  }, [])
+    setPendingFile(file);
+    setPhase('preview');
+  }, []);
 
-  /* User confirmed → now actually send to API */
   const handleAnalyse = useCallback(async () => {
-    const file = pendingFile
-    if (!file) return
-    setResult(null); setErrorMsg(''); setUploadPct(0); setMsgIdx(0)
-    setPhase('uploading')
+    const file = pendingFile;
+    if (!file) return;
+
+    setResult(null);
+    setErrorMsg('');
+    setUploadPct(0);
+    setMsgIdx(0);
+    setPhase('uploading');
+
     try {
       const data = await predictVideo(file, frameCount, (pct) => {
-        setUploadPct(pct)
-        if (pct >= 100) setPhase('analysing')
-      })
-      setResult(data)
-      setPhase('done')
+        setUploadPct(pct);
+        if (pct >= 100) setPhase('analysing');
+      });
+      setResult(data);
+      setPhase('done');
     } catch (err) {
-      setErrorMsg(err?.message || 'Server error')
-      setPhase('error')
+      setErrorMsg(err?.message || 'Server error');
+      setPhase('error');
     }
-  }, [pendingFile, frameCount])
+  }, [pendingFile, frameCount]);
 
   const reset = () => {
-    setPhase('idle')
-    setResult(null)
-    setPendingFile(null)
-    setFrameCount(DEFAULT_FRAMES)
-    setUploadPct(0)
-    setErrorMsg('')
-  }
+    setPhase('idle');
+    setResult(null);
+    setPendingFile(null);
+    setFrameCount(DEFAULT_FRAMES);
+    setUploadPct(0);
+    setErrorMsg('');
+  };
 
-  const loading = phase === 'uploading' || phase === 'analysing'
+  const isLoading = phase === 'uploading' || phase === 'analysing';
 
+  // ── Render ──
   return (
     <div className="dg-app">
-
-      {/* ── Floating API status pill ── */}
+      {/* Floating health pill */}
       <div className="dg-status-anchor">
-        <FloatingHealthPill health={health} loading={healthLoading} />
+        <HealthPill health={health} loading={healthLoading} />
       </div>
 
-      {/* ── HERO (idle + preview only) ── */}
+      {/* Hero section (idle & preview) */}
       {(phase === 'idle' || phase === 'preview') && (
         <section className="dg-hero" data-compact={phase === 'preview'}>
           <p className="dg-eyebrow">Deepfake Detection</p>
           <h1 className="dg-h1">
-            Is this video<br />
+            Is this video
+            <br />
             <em className="dg-h1-em">real?</em>
           </h1>
           {phase === 'idle' && (
             <p className="dg-sub">
-              Upload any video. Our model analyses up to {MAX_FRAMES} frames with<br />
+              Upload any video. Our model analyses up to {MAX_FRAMES} frames with
+              <br />
               Grad-CAM heatmaps to reveal manipulation.
             </p>
           )}
         </section>
       )}
 
-      {/* ── SAMPLE BAR ── */}
+      {/* Sample videos — wrapped in an error boundary */}
       {phase === 'idle' && (
         <div className="dg-samples-wrap">
-          <SampleBar onUpload={handleFile} />
+          <SampleBarErrorBoundary>
+            <SampleBar onUpload={handleFile} />
+          </SampleBarErrorBoundary>
         </div>
       )}
 
-      {/* ── MAIN ── */}
       <main className="dg-main">
-
-        {/* Upload zone — idle only */}
+        {/* Upload zone – idle only */}
         {phase === 'idle' && (
           <div className="dg-upload-wrap">
             <UploadZone onFile={handleFile} />
@@ -258,9 +175,10 @@ export default function App() {
           </div>
         )}
 
-        {/* Video preview — preview phase */}
+        {/* Video preview */}
         {phase === 'preview' && pendingFile && (
           <VideoPreview
+            key={`${pendingFile.name}-${pendingFile.lastModified}`}
             file={pendingFile}
             frameCount={frameCount}
             onFrameCountChange={setFrameCount}
@@ -269,7 +187,7 @@ export default function App() {
           />
         )}
 
-        {/* Reset button — done phase */}
+        {/* Reset button (done phase) */}
         {phase === 'done' && (
           <button className="dg-reset" onClick={reset}>
             <RefreshCw size={13} />
@@ -278,11 +196,13 @@ export default function App() {
         )}
 
         {/* Progress banner */}
-        {loading && (
-          <ProgressBanner uploadPct={uploadPct} message={ANALYSIS_MSGS[msgIdx]} />
+        {isLoading && (
+          <div className="dg-loading-stage">
+            <ProgressBanner uploadPct={uploadPct} message={ANALYSIS_MSGS[msgIdx]} />
+          </div>
         )}
 
-        {/* Error */}
+        {/* Error display */}
         {phase === 'error' && (
           <div className="dg-error">
             <AlertTriangle size={16} />
@@ -296,22 +216,22 @@ export default function App() {
         {/* Results */}
         {phase === 'done' && result && (
           <div className="dg-results">
-            <VerdictBadge verdict={result.verdict} />
+            <VerdictBanner result={result} />
             <FrameChart frames={result.frames} threshold={result.threshold_used ?? 0.5} />
             <HeatmapGrid frames={result.frames} />
           </div>
         )}
 
-        {/* How it works — idle only */}
+        {/* How it works – idle only */}
         {phase === 'idle' && (
           <section className="dg-how">
             <p className="dg-how-label">How it works</p>
             <div className="dg-how-grid">
               {[
-                { name: 'Extract',  desc: 'Evenly-spaced frames sampled from your video'  },
-                { name: 'Detect',   desc: 'MTCNN isolates the face region with precision'     },
-                { name: 'Analyse',  desc: 'EfficientNet-B0 scores each frame for artifacting' },
-                { name: 'Explain',  desc: 'Grad-CAM highlights the suspicious regions'        },
+                { name: 'Extract', desc: 'Evenly-spaced frames sampled from your video' },
+                { name: 'Detect', desc: 'MTCNN isolates the face region with precision' },
+                { name: 'Analyse', desc: 'EfficientNet-B0 scores each frame for artifacting' },
+                { name: 'Explain', desc: 'Grad-CAM highlights the suspicious regions' },
               ].map(({ name, desc }, i) => (
                 <div className="dg-how-card" key={name}>
                   <span className="dg-how-num">{String(i + 1).padStart(2, '0')}</span>
@@ -322,12 +242,10 @@ export default function App() {
             </div>
           </section>
         )}
-
       </main>
 
-      {/* ── FOOTER ── */}
       <footer className="dg-footer">
-        Trained on FaceForensics++ C23 &nbsp;·&nbsp; EfficientNet-B0 &nbsp;·&nbsp; Grad-CAM
+        Trained on FaceForensics++ C23 · EfficientNet-B0 · Grad-CAM
       </footer>
 
       {/* ══ STYLES ══ */}
@@ -336,6 +254,13 @@ export default function App() {
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+        html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  background: #ffffff; /* or match .dg-app */
+}
         /* ── SHELL ── */
         .dg-app {
           min-height: 100vh;
@@ -356,33 +281,6 @@ export default function App() {
           z-index: 200;
           max-width: calc(100vw - 24px);
         }
-
-        .dg-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 12px;
-          border-radius: 100px;
-          font-size: 12px;
-          font-weight: 400;
-          letter-spacing: 0.01em;
-          white-space: nowrap;
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          border: 0.5px solid rgba(0,0,0,0.08);
-        }
-        .dg-pill--online  { background: rgba(240,253,244,0.94); color: #15803d; }
-        .dg-pill--offline { background: rgba(254,242,242,0.94); color: #dc2626; }
-        .dg-pill--loading { background: rgba(249,250,251,0.94); color: #6b7280; }
-
-        .dg-pill-dot {
-          width: 6px; height: 6px;
-          border-radius: 50%;
-          flex-shrink: 0;
-        }
-        .dg-pill-dot--online  { background: #22c55e; }
-        .dg-pill-dot--offline { background: #ef4444; }
-        .dg-pill-dot--loading { background: #9ca3af; }
 
         /* ── HERO ── */
         .dg-hero {
@@ -445,6 +343,14 @@ export default function App() {
           padding: 24px 24px 64px;
         }
 
+        .dg-loading-stage {
+          min-height: min(42vh, 420px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px 0 12px;
+        }
+
         /* ── UPLOAD ZONE ── */
         .dg-upload-wrap {
           max-width: 520px;
@@ -473,247 +379,6 @@ export default function App() {
           background: rgba(0,0,0,0.012) !important;
         }
 
-        /* ── VIDEO PREVIEW ── */
-        .dg-preview {
-          max-width: 560px;
-          margin: 0 auto 24px;
-          border: 0.5px solid rgba(0,0,0,0.1);
-          border-radius: 18px;
-          background: #fafafa;
-          overflow: hidden;
-        }
-
-        .dg-preview-video-wrap {
-          width: 100%;
-          background: #000;
-          border-radius: 18px 18px 0 0;
-          overflow: hidden;
-          aspect-ratio: 16/9;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .dg-preview-video {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          display: block;
-        }
-
-        .dg-preview-controls {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 14px 16px 10px;
-        }
-
-        .dg-play-btn {
-          flex-shrink: 0;
-          width: 32px; height: 32px;
-          border-radius: 50%;
-          border: 0.5px solid rgba(0,0,0,0.12);
-          background: #fff;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer;
-          color: #1d1d1f;
-          transition: background 0.15s;
-        }
-        .dg-play-btn:hover { background: rgba(0,0,0,0.04); }
-
-        /* seek bar */
-        .dg-seek-track {
-          flex: 1;
-          height: 3px;
-          background: rgba(0,0,0,0.08);
-          border-radius: 2px;
-          position: relative;
-          cursor: pointer;
-        }
-        .dg-seek-fill {
-          position: absolute;
-          left: 0; top: 0; bottom: 0;
-          background: #06b6d4;
-          border-radius: 2px;
-          transition: width 0.1s linear;
-        }
-        .dg-seek-thumb {
-          position: absolute;
-          top: 50%;
-          transform: translate(-50%, -50%);
-          width: 11px; height: 11px;
-          border-radius: 50%;
-          background: #06b6d4;
-          box-shadow: 0 0 0 2px #fff;
-        }
-
-        .dg-time {
-          flex-shrink: 0;
-          font-size: 11px;
-          font-variant-numeric: tabular-nums;
-          color: #aeaeb2;
-          letter-spacing: 0.01em;
-          min-width: 72px;
-          text-align: right;
-        }
-
-        .dg-preview-meta {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0 16px 12px;
-        }
-        .dg-preview-name {
-          font-size: 12px;
-          color: #6e6e73;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          max-width: 70%;
-        }
-        .dg-preview-size {
-          font-size: 12px;
-          color: #aeaeb2;
-          flex-shrink: 0;
-        }
-
-        .dg-preview-actions {
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-          gap: 10px;
-          padding: 12px 16px;
-          border-top: 0.5px solid rgba(0,0,0,0.06);
-        }
-
-        .dg-btn-ghost {
-          padding: 8px 14px;
-          border-radius: 100px;
-          border: 0.5px solid rgba(0,0,0,0.1);
-          background: transparent;
-          font-size: 13px;
-          font-family: inherit;
-          color: #6e6e73;
-          cursor: pointer;
-          transition: background 0.15s;
-        }
-        .dg-btn-ghost:hover { background: rgba(0,0,0,0.04); color: #1d1d1f; }
-
-        .dg-btn-analyse {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 9px 18px;
-          border-radius: 100px;
-          border: none;
-          background: #1d1d1f;
-          color: #fff;
-          font-size: 13px;
-          font-family: inherit;
-          font-weight: 500;
-          cursor: pointer;
-          transition: background 0.15s, transform 0.1s;
-        }
-        .dg-btn-analyse:hover  { background: #3a3a3c; }
-        .dg-btn-analyse:active { transform: scale(0.98); }
-
-        /* ── FRAME-COUNT SLIDER ── */
-        .dg-frame-slider {
-          padding: 0 16px 14px;
-        }
-        .dg-frame-slider__row {
-          display: flex;
-          align-items: baseline;
-          justify-content: space-between;
-          margin-bottom: 8px;
-        }
-        .dg-frame-slider__label {
-          font-size: 12px;
-          color: #6e6e73;
-          letter-spacing: 0.01em;
-        }
-        .dg-frame-slider__value {
-          font-size: 13px;
-          font-weight: 600;
-          color: #1d1d1f;
-          font-variant-numeric: tabular-nums;
-        }
-        .dg-frame-slider__input {
-          -webkit-appearance: none;
-          -moz-appearance: none;
-          appearance: none;
-          display: block;
-          width: 100%;
-          height: 24px;         /* real hit area — generous for mouse + touch */
-          background: transparent;
-          outline: none;
-          cursor: pointer;
-          margin: 0;
-        }
-        /* visual track — thin, centered inside the tall hit area above */
-        .dg-frame-slider__input::-webkit-slider-runnable-track {
-          height: 3px;
-          border-radius: 2px;
-          background: rgba(0,0,0,0.08);
-        }
-        .dg-frame-slider__input::-moz-range-track {
-          height: 3px;
-          border-radius: 2px;
-          background: rgba(0,0,0,0.08);
-        }
-        .dg-frame-slider__input::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 16px; height: 16px;
-          border-radius: 50%;
-          background: #06b6d4;
-          box-shadow: 0 0 0 3px #fff, 0 1px 3px rgba(0,0,0,0.25);
-          cursor: pointer;
-          margin-top: -6.5px;   /* vertically centers the thumb on the 3px track */
-        }
-        .dg-frame-slider__input::-moz-range-thumb {
-          width: 16px; height: 16px;
-          border: none;
-          border-radius: 50%;
-          background: #06b6d4;
-          box-shadow: 0 0 0 3px #fff, 0 1px 3px rgba(0,0,0,0.25);
-          cursor: pointer;
-        }
-        .dg-frame-slider__ticks {
-          display: flex;
-          justify-content: space-between;
-          margin-top: 6px;
-        }
-        .dg-frame-slider__ticks span {
-          font-size: 10.5px;
-          color: #aeaeb2;
-          letter-spacing: 0.01em;
-        }
-
-        /* ── MINIMAL VERDICT BADGE ── */
-        .dg-verdict-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
-          padding: 12px 22px;
-          border-radius: 100px;
-          font-family: var(--font-mono, 'SF Mono', monospace);
-          font-size: 20px;
-          font-weight: 700;
-          letter-spacing: 0.06em;
-          border: 1px solid;
-          margin-bottom: 28px;
-        }
-        .dg-verdict-badge--real {
-          color: #1D7A4C;
-          border-color: rgba(34,197,94,0.3);
-          background: rgba(34,197,94,0.07);
-        }
-        .dg-verdict-badge--fake {
-          color: #D14343;
-          border-color: rgba(239,68,68,0.3);
-          background: rgba(239,68,68,0.07);
-        }
 
         /* ── RESET ── */
         .dg-reset {

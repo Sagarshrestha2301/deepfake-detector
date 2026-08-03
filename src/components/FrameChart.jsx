@@ -62,12 +62,12 @@ export function FrameChart({ frames, threshold = 0.5 }) {
           >
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="rgba(255,255,255,0.05)"
+              stroke="rgba(15,23,42,0.08)"
               vertical={false}
             />
             <XAxis
               dataKey="frame_index"
-              tick={{ fill: '#4a5568', fontSize: 11, fontFamily: 'Space Mono' }}
+              tick={{ fill: '#000000', fontSize: 11, fontFamily: 'SF Mono' }}
               tickFormatter={(v) => `F${v + 1}`}
               axisLine={false}
               tickLine={false}
@@ -75,14 +75,14 @@ export function FrameChart({ frames, threshold = 0.5 }) {
             <YAxis
               domain={[0, 1]}
               tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
-              tick={{ fill: '#4a5568', fontSize: 11, fontFamily: 'Space Mono' }}
+              tick={{ fill: '#000000', fontSize: 11, fontFamily: 'SF Mono' }}
               axisLine={false}
               tickLine={false}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(15,23,42,0.04)' }} />
             <ReferenceLine
               y={threshold}
-              stroke="rgba(245,158,11,0.7)"
+              stroke="rgba(245,158,11,0.8)"
               strokeDasharray="5 4"
               strokeWidth={1.5}
               label={{
@@ -90,7 +90,7 @@ export function FrameChart({ frames, threshold = 0.5 }) {
                 position: 'right',
                 fill: '#f59e0b',
                 fontSize: 11,
-                fontFamily: 'Space Mono'
+                fontFamily: 'SF Mono'
               }}
             />
             <Bar dataKey="fake_prob" radius={[3, 3, 0, 0]} maxBarSize={32}>
@@ -120,25 +120,27 @@ export function FrameChart({ frames, threshold = 0.5 }) {
 const style = document.createElement('style')
 style.textContent = `
   .frame-chart {
-    background: var(--bg-card);
-    border: 1px solid var(--bg-border);
-    border-radius: var(--radius-lg);
-    padding: 24px 28px 20px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 24px;
+    padding: 24px 28px 22px;
     margin-bottom: 32px;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.05);
   }
   .frame-chart__inner { margin-top: 20px; }
 
   .chart-tooltip {
-    background: #1a2035;
-    border: 1px solid var(--bg-border);
-    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 14px;
     padding: 10px 14px;
     font-size: 13px;
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
   }
   .chart-tooltip__title {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--text-muted);
+    color: #000000;
     margin-bottom: 6px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -147,7 +149,7 @@ style.textContent = `
     display: flex;
     justify-content: space-between;
     gap: 20px;
-    color: var(--text-secondary);
+    color: #000000;
   }
 
   .chart-legend {
@@ -161,7 +163,7 @@ style.textContent = `
     display: flex;
     align-items: center;
     gap: 5px;
-    color: var(--text-secondary);
+    color: #000000;
   }
   .chart-legend__item::before {
     content: '';
@@ -176,14 +178,14 @@ style.textContent = `
   .section-title {
     font-size: 14px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: #000000;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-family: var(--font-mono);
   }
   .section-sub {
     font-size: 13px;
-    color: var(--text-secondary);
+    color: #000000;
     margin-top: 4px;
   }
 `

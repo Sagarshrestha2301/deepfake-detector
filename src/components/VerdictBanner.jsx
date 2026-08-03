@@ -6,11 +6,10 @@ export default function VerdictBanner({ result }) {
   // Restrained palette — ink on white, single accent that shifts by verdict.
   // No neon, no heavy gradients. Accent is desaturated enough to feel calm.
   const accent     = isFake ? '#D14343' : '#1D7A4C'
-  const accentSoft = isFake ? '#FBEEEE' : '#EEF6F1'
   const hairline    = 'rgba(0,0,0,0.08)'
-  const ink         = '#1D1D1F'
-  const inkMuted    = '#86868B'
-  const inkFaint    = '#C7C7CC'
+  const ink         = '#000000'
+  const inkMuted    = '#000000'
+  const inkFaint    = '#000000'
 
   const riskLabel = result.confidence >= 0.80
     ? 'High confidence'
@@ -84,7 +83,7 @@ export default function VerdictBanner({ result }) {
         </div>
 
         <p style={{
-          fontSize: 16, color: '#48484A', lineHeight: 1.6, maxWidth: 560,
+          fontSize: 16, color: ink, lineHeight: 1.6, maxWidth: 560,
           marginTop: 24, fontWeight: 300, fontFamily: bodyFont,
         }}>
           {isFake

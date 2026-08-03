@@ -9,7 +9,6 @@
  */
 
 import { Cpu, Wifi, WifiOff, Loader } from 'lucide-react'
-import clsx from 'clsx'
 
 /* ---- Health Pill (top-right) ---------------------------------- */
 export function HealthPill({ health, loading }) {
@@ -47,32 +46,41 @@ export function ProgressBanner({ uploadPct, message }) {
   const isUploading = uploadPct < 100
 
   return (
-    <div className="progress-banner animate-fade-up">
-      <div className="progress-banner__icon">
-        <Loader size={20} className="animate-spin" />
+    <div className="progress-banner-wrap animate-fade-up">
+      <div className="progress-banner">
+        <div className="progress-banner__icon">
+          <Loader size={20} className="animate-spin" />
+        </div>
+
+        <div className="progress-banner__body">
+          <p className="progress-banner__message">
+            {isUploading
+              ? `Uploading video… ${uploadPct}%`
+              : (message || 'Running EfficientNet-B0 inference…')}
+          </p>
+
+          {isUploading && (
+            <div className="progress-bar">
+              <div
+                className="progress-bar__fill"
+                style={{ width: `${uploadPct}%` }}
+              />
+            </div>
+          )}
+
+          {!isUploading && (
+            <p className="progress-banner__sub">
+              Extracting frames · Grad-CAM heatmaps · ~5–10s on GPU
+            </p>
+          )}
+        </div>
       </div>
 
-      <div className="progress-banner__body">
-        <p className="progress-banner__message">
-          {isUploading
-            ? `Uploading video… ${uploadPct}%`
-            : (message || 'Running EfficientNet-B0 inference…')}
-        </p>
-
-        {isUploading && (
-          <div className="progress-bar">
-            <div
-              className="progress-bar__fill"
-              style={{ width: `${uploadPct}%` }}
-            />
-          </div>
-        )}
-
-        {!isUploading && (
-          <p className="progress-banner__sub">
-            Extracting frames · Grad-CAM heatmaps · ~5–10s on GPU
-          </p>
-        )}
+      <div className="progress-stage">
+        <span className="progress-stage__dot progress-stage__dot--one" />
+        <span className="progress-stage__dot progress-stage__dot--two" />
+        <span className="progress-stage__dot progress-stage__dot--three" />
+        <span className="progress-stage__track" />
       </div>
     </div>
   )
@@ -101,15 +109,23 @@ style.textContent = `
   .health-pill__sep     { color: var(--text-muted); margin: 0 2px; }
 
   /* Progress banner */
+  .progress-banner-wrap {
+    width: min(100%, 640px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
   .progress-banner {
     display: flex;
     align-items: flex-start;
     gap: 16px;
+    width: 100%;
     padding: 20px 24px;
     background: var(--bg-card);
     border: 1px solid var(--bg-border);
     border-radius: var(--radius-lg);
-    margin-bottom: 32px;
+    box-shadow: 0 18px 48px rgba(0,0,0,0.22);
   }
   .progress-banner__icon {
     flex-shrink: 0;
@@ -141,6 +157,43 @@ style.textContent = `
     background: linear-gradient(90deg, var(--accent-blue-dim), var(--accent-blue));
     border-radius: 2px;
     transition: width 0.2s ease;
+  }
+
+  .progress-stage {
+    position: relative;
+    width: min(100%, 360px);
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .progress-stage__track {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    top: 50%;
+    height: 2px;
+    transform: translateY(-50%);
+    background: linear-gradient(90deg, transparent, rgba(59,130,246,0.28), transparent);
+    border-radius: 999px;
+  }
+  .progress-stage__dot {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    margin: 0 10px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    box-shadow: 0 0 0 0 rgba(59,130,246,0.4);
+    animation: progressFloat 1.8s ease-in-out infinite;
+  }
+  .progress-stage__dot--one { animation-delay: 0s; }
+  .progress-stage__dot--two { animation-delay: 0.2s; opacity: 0.8; }
+  .progress-stage__dot--three { animation-delay: 0.4s; opacity: 0.6; }
+
+  @keyframes progressFloat {
+    0%, 100% { transform: translateY(0) scale(1); box-shadow: 0 0 0 0 rgba(59,130,246,0.18); }
+    50% { transform: translateY(-6px) scale(1.12); box-shadow: 0 0 0 10px rgba(59,130,246,0); }
   }
 `
 document.head.appendChild(style)
