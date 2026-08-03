@@ -311,13 +311,6 @@ function Lightbox({ frames, index, onClose, onPrev, onNext, onJump }) {
 
 const style = document.createElement('style');
 style.textContent = `
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  min-height: 100vh;
-  background: #ffffff; /* or match .dg-app */
-}
   .heatmap-section {
     background: #ffffff;
     border-top: 1px solid rgba(15, 23, 42, 0.08);
@@ -650,14 +643,13 @@ html, body {
   }
 
   .lightbox__img {
-    max-width: 100%;
-    max-height: 100%;
-    width: auto;
-    height: auto;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
     display: block;
     border-radius: 10px;
     cursor: pointer;
+    image-rendering: -webkit-optimize-contrast;
   }
 
   .lightbox__meta {
