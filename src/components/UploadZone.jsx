@@ -143,7 +143,7 @@ export function UploadZone({ onFile, disabled }) {
         .uz-title {
           font-size: 16px;
           font-weight: 600;
-          color: #E5E7EB;
+          color: #1d1b1b;
           margin: 0;
         }
 
